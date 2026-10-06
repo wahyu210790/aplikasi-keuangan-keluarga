@@ -1,0 +1,51 @@
+# Logs & Cache
+*.log
+.phpunit.result.cache
+.phpunit.cache/
+
+# Environment files & Secrets
+.env
+.env.backup
+.env.production
+.env.local
+.env.development
+.env.test
+frontend/.env
+frontend/.env.local
+frontend/.env.development
+frontend/.env.production
+
+# Dependencies
+/vendor/
+/node_modules/
+frontend/node_modules/
+
+# Build artifacts
+/public/build/
+/public/hot/
+/public/storage/
+frontend/dist/
+
+# Storage & Runtime
+/storage/*.key
+/storage/pail/
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/testing/*
+/storage/framework/views/*
+/storage/logs/*.log
+scratch/
+
+# IDE & OS Files
+.DS_Store
+Thumbs.db
+/.fleet
+/.idea
+/.nova
+/.vscode
+/.zed
+.phpactor.json
+Homestead.json
+Homestead.yaml
+/auth.json
+
