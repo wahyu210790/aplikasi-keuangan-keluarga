@@ -57,6 +57,50 @@ export default function AdminDashboard() {
     is_active: true,
   });
 
+  // Customer Modal & Form States
+  const [customerModal, setCustomerModal] = useState(false);
+  const [customerForm, setCustomerForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    password_confirmation: '',
+    household_name: '',
+    plan_id: '',
+  });
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerError, setCustomerError] = useState(null);
+  const [customerValidationErrors, setCustomerValidationErrors] = useState({});
+
+  const handleCreateCustomer = async (e) => {
+    e.preventDefault();
+    setCustomerLoading(true);
+    setCustomerError(null);
+    setCustomerValidationErrors({});
+    try {
+      await api.post('/admin/customers', customerForm);
+      setSuccessMessage(`Customer "${customerForm.name}" dan Household "${customerForm.household_name}" berhasil dibuat.`);
+      setCustomerModal(false);
+      setCustomerForm({
+        name: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+        household_name: '',
+        plan_id: '',
+      });
+      fetchData();
+    } catch (err) {
+      if (err.response && err.response.status === 422) {
+        setCustomerValidationErrors(err.response.data?.errors || {});
+        setCustomerError(err.response.data?.message || 'Validasi gagal. Periksa kembali form anda.');
+      } else {
+        setCustomerError(err.response?.data?.message || 'Gagal membuat customer.');
+      }
+    } finally {
+      setCustomerLoading(false);
+    }
+  };
+
   const isSuperAdmin = user?.global_role === 'super_admin';
 
   // Fetch Data according to activeTab
@@ -296,42 +340,67 @@ export default function AdminDashboard() {
       {/* TAB 2: USER MANAGEMENT (16.5 & 16.6) */}
       {activeTab === 'users' && (
         <div className="bg-white border rounded-lg p-4 space-y-4">
-          <h3 className="font-bold text-gray-800">Global User Management</h3>
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-50 border-b text-xs uppercase text-gray-500">
-              <tr>
-                <th className="p-2">ID</th>
-                <th className="p-2">Nama</th>
-                <th className="p-2">Email</th>
-                <th className="p-2">Global Role</th>
-                <th className="p-2 text-center">Households</th>
-                <th className="p-2 text-center">Aksi (Reset Password)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y text-xs">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="p-2 font-mono">#{u.id}</td>
-                  <td className="p-2 font-semibold text-gray-900">{u.name}</td>
-                  <td className="p-2 text-gray-600">{u.email}</td>
-                  <td className="p-2">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.global_role === 'super_admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}`}>
-                      {u.global_role || 'user'}
-                    </span>
-                  </td>
-                  <td className="p-2 text-center font-bold">{u.households_count ?? 0}</td>
-                  <td className="p-2 text-center">
-                    <button
-                      onClick={() => { setResetUser(u); setNewPassword(''); setConfirmPassword(''); }}
-                      className="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded text-xs font-semibold"
-                    >
-                      Reset Password (16.6)
-                    </button>
-                  </td>
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <div>
+              <h3 className="font-bold text-gray-800">Manajemen Customer &amp; User</h3>
+              <p className="text-xs text-gray-500">Kelola akun pengguna, registrasi customer baru, dan reset password</p>
+            </div>
+            <button
+              onClick={() => {
+                setCustomerError(null);
+                setCustomerValidationErrors({});
+                setCustomerForm({ name: '', email: '', password: '', password_confirmation: '', household_name: '', plan_id: '' });
+                setCustomerModal(true);
+              }}
+              className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700 transition"
+            >
+              + Tambah Customer
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 border-b text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="p-2">ID</th>
+                  <th className="p-2">Nama</th>
+                  <th className="p-2">Email</th>
+                  <th className="p-2">Role</th>
+                  <th className="p-2">Household</th>
+                  <th className="p-2 text-center">Status</th>
+                  <th className="p-2 text-center">Aksi</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y text-xs">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="p-2 font-mono">#{u.id}</td>
+                    <td className="p-2 font-semibold text-gray-900">{u.name}</td>
+                    <td className="p-2 text-gray-600">{u.email}</td>
+                    <td className="p-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.global_role === 'super_admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                        {u.role_label || u.global_role || 'Customer'}
+                      </span>
+                    </td>
+                    <td className="p-2 font-medium text-gray-800">{u.household_name || '-'}</td>
+                    <td className="p-2 text-center">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${u.status === 'suspended' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                        {u.status || 'active'}
+                      </span>
+                    </td>
+                    <td className="p-2 text-center">
+                      <button
+                        onClick={() => { setResetUser(u); setNewPassword(''); setConfirmPassword(''); }}
+                        className="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded text-xs font-semibold"
+                      >
+                        Reset Password
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -604,6 +673,128 @@ export default function AdminDashboard() {
               <div className="flex justify-end space-x-2 border-t pt-3">
                 <button type="button" onClick={() => setPlanModal(false)} className="px-3 py-1.5 bg-gray-200 rounded text-xs">Batal</button>
                 <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-bold hover:bg-indigo-700">Simpan Paket</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Form Modal */}
+      {customerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-bold text-lg text-gray-900">+ Tambah Customer &amp; Household Baru</h3>
+              <button
+                type="button"
+                onClick={() => setCustomerModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              >
+                &times;
+              </button>
+            </div>
+
+            {customerError && (
+              <div className="bg-red-100 border border-red-300 text-red-700 text-xs p-3 rounded">
+                {customerError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateCustomer} className="space-y-3 text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Nama Customer *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Wahyu Santoso"
+                  className="w-full border rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={customerForm.name}
+                  onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
+                  disabled={customerLoading}
+                />
+                {customerValidationErrors.name && (
+                  <p className="text-red-500 text-[11px] mt-0.5">{customerValidationErrors.name[0]}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Email Customer *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="Contoh: wahyu@example.com"
+                  className="w-full border rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={customerForm.email}
+                  onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
+                  disabled={customerLoading}
+                />
+                {customerValidationErrors.email && (
+                  <p className="text-red-500 text-[11px] mt-0.5">{customerValidationErrors.email[0]}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Password Sementara *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    className="w-full border rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={customerForm.password}
+                    onChange={(e) => setCustomerForm({ ...customerForm, password: e.target.value })}
+                    disabled={customerLoading}
+                  />
+                  {customerValidationErrors.password && (
+                    <p className="text-red-500 text-[11px] mt-0.5">{customerValidationErrors.password[0]}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Konfirmasi Password *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    className="w-full border rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={customerForm.password_confirmation}
+                    onChange={(e) => setCustomerForm({ ...customerForm, password_confirmation: e.target.value })}
+                    disabled={customerLoading}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Nama Household *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Keluarga Wahyu"
+                  className="w-full border rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={customerForm.household_name}
+                  onChange={(e) => setCustomerForm({ ...customerForm, household_name: e.target.value })}
+                  disabled={customerLoading}
+                />
+                {customerValidationErrors.household_name && (
+                  <p className="text-red-500 text-[11px] mt-0.5">{customerValidationErrors.household_name[0]}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-2 border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() => setCustomerModal(false)}
+                  className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300"
+                  disabled={customerLoading}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={customerLoading}
+                  className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {customerLoading ? 'Memproses...' : 'Buat Customer & Household'}
+                </button>
               </div>
             </form>
           </div>

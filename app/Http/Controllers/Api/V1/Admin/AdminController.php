@@ -12,6 +12,7 @@ use App\Models\SystemSetting;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
@@ -193,7 +194,7 @@ class AdminController extends Controller
      */
     public function users(Request $request)
     {
-        $query = User::withCount('householdMembers');
+        $query = User::with(['householdMembers.household']);
 
         if ($request->filled('search')) {
             $search = $request->input('search');
@@ -211,18 +212,117 @@ class AdminController extends Controller
         $users = $query->latest()->paginate($perPage);
 
         $users->getCollection()->transform(function ($u) {
+            $primaryMember = $u->householdMembers->first();
+            $household = $primaryMember ? $primaryMember->household : null;
+
             return [
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
                 'global_role' => $u->global_role ?? 'user',
+                'role_label' => $u->isSuperAdmin() ? 'Super Admin' : ($primaryMember ? $primaryMember->role : 'Customer'),
+                'household_name' => $household ? $household->name : '-',
+                'status' => $household ? ($household->status ?? 'active') : 'active',
                 'email_verified_at' => $u->email_verified_at ? $u->email_verified_at->toIso8601String() : null,
                 'created_at' => $u->created_at ? $u->created_at->toIso8601String() : null,
-                'households_count' => $u->household_members_count,
+                'households_count' => $u->householdMembers->count(),
             ];
         });
 
         return response()->json($users);
+    }
+
+    /**
+     * Create a new customer user and their household atomically for Super Admin.
+     */
+    public function storeCustomer(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'household_name' => ['required', 'string', 'max:255'],
+            'plan_id' => ['nullable', 'integer', 'exists:plans,id'],
+        ]);
+
+        return DB::transaction(function () use ($validated, $request) {
+            // 1. Create User (Customer)
+            $customer = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'global_role' => null,
+            ]);
+
+            // 2. Create Household
+            $household = Household::create([
+                'name' => $validated['household_name'],
+                'status' => 'active',
+            ]);
+
+            // 3. Attach Customer as household_owner
+            HouseholdMember::create([
+                'user_id' => $customer->id,
+                'household_id' => $household->id,
+                'role' => 'household_owner',
+            ]);
+
+            // 4. Attach Active Subscription
+            $planId = $validated['plan_id'] ?? null;
+            if (!$planId) {
+                $plan = Plan::where('slug', 'pro')->orWhere('slug', 'family')->first()
+                    ?? Plan::where('is_active', true)->first()
+                    ?? Plan::first();
+                $planId = $plan ? $plan->id : null;
+            }
+
+            $subscription = null;
+            if ($planId) {
+                $subscription = Subscription::create([
+                    'household_id' => $household->id,
+                    'plan_id' => $planId,
+                    'status' => 'active',
+                    'starts_at' => now(),
+                    'expires_at' => now()->addYear(),
+                ]);
+            }
+
+            // 5. Activity Log
+            ActivityLog::create([
+                'user_id' => $request->user()->id,
+                'household_id' => $household->id,
+                'action' => 'customer_created',
+                'entity_type' => 'user',
+                'entity_id' => $customer->id,
+                'description' => "Customer \"{$customer->name}\" ({$customer->email}) & Household \"{$household->name}\" created by Super Admin",
+                'created_at' => now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Customer dan Household berhasil dibuat.',
+                'data' => [
+                    'user' => [
+                        'id' => $customer->id,
+                        'name' => $customer->name,
+                        'email' => $customer->email,
+                        'global_role' => $customer->global_role ?? 'user',
+                    ],
+                    'household' => [
+                        'id' => $household->id,
+                        'name' => $household->name,
+                        'status' => $household->status,
+                    ],
+                    'membership' => [
+                        'role' => 'household_owner',
+                    ],
+                    'subscription' => $subscription ? [
+                        'id' => $subscription->id,
+                        'plan_id' => $subscription->plan_id,
+                        'status' => $subscription->status,
+                    ] : null,
+                ],
+            ], 201);
+        });
     }
 
     /**

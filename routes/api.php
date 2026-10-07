@@ -221,6 +221,8 @@ Route::middleware(['auth:sanctum', 'super_admin'])->prefix('v1/admin')->group(fu
     // 16.5 User Management
     Route::get('users', [\App\Http\Controllers\Api\V1\Admin\AdminController::class, 'users'])
         ->name('api.v1.admin.users.index');
+    Route::post('customers', [\App\Http\Controllers\Api\V1\Admin\AdminController::class, 'storeCustomer'])
+        ->name('api.v1.admin.customers.store');
     Route::get('users/{user}', [\App\Http\Controllers\Api\V1\Admin\AdminController::class, 'showUser'])
         ->name('api.v1.admin.users.show');
 
