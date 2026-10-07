@@ -36,7 +36,7 @@ class ReportController extends Controller
         $totalExpense = (float) $expenseQuery->sum('amount');
         $netCashflow = $totalIncome - $totalExpense;
 
-        $accounts = Account::where('household_id', $household->id)
+        $accounts = \App\Services\HouseholdPermissionService::accessibleAccountsQuery($request->user(), $household)
             ->where('is_active', true)
             ->get();
 
@@ -181,7 +181,7 @@ class ReportController extends Controller
      */
     public function accountBalances(Request $request, Household $household): JsonResponse
     {
-        $accounts = Account::where('household_id', $household->id)->get();
+        $accounts = \App\Services\HouseholdPermissionService::accessibleAccountsQuery($request->user(), $household)->get();
 
         $data = [];
         foreach ($accounts as $acc) {
