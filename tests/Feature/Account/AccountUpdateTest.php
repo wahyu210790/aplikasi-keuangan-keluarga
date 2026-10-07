@@ -342,7 +342,7 @@ class AccountUpdateTest extends TestCase
         $response = $this->patchJson("/api/v1/households/{$household->id}/accounts/{$account->id}", $payload);
         $response->assertStatus(200);
         $data = $response->json('account');
-        $allowed = ['id', 'name', 'type', 'initial_balance', 'is_active'];
+        $allowed = ['id', 'user_id', 'user_name', 'name', 'type', 'initial_balance', 'is_active'];
         $this->assertEquals($allowed, array_keys($data));
     }
 }

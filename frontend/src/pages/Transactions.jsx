@@ -106,8 +106,10 @@ export default function Transactions() {
   const getAccountName = (accId) => {
     if (!accId) return '—';
     const acc = accounts.find((a) => String(a.id) === String(accId));
-    return acc ? acc.name : `Akun #${accId}`;
+    if (!acc) return `Akun #${accId}`;
+    return acc.user_name ? `${acc.name} (${acc.user_name})` : acc.name;
   };
+
 
   // Fetch transactions with filter support (Task 7.24)
   const fetchTransactions = (householdId, typeFilter = filterType) => {
@@ -606,9 +608,12 @@ export default function Transactions() {
           ) : (
             <select value={createAccountId} onChange={(e) => setCreateAccountId(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
               <option value="">-- Pilih Akun --</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} {a.user_name ? `(${a.user_name})` : ''}
+                  </option>
+                ))}
+
             </select>
           )}
           {createErrors.account_id && <p className="text-xs text-red-600 mt-1">{createErrors.account_id}</p>}
@@ -725,9 +730,12 @@ export default function Transactions() {
           ) : (
             <select value={editAccountId} onChange={(e) => setEditAccountId(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 text-sm">
               <option value="">-- Pilih Akun --</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} {a.user_name ? `(${a.user_name})` : ''}
+                  </option>
+                ))}
+
             </select>
           )}
           {editErrors.account_id && <p className="text-xs text-red-600 mt-1">{editErrors.account_id}</p>}

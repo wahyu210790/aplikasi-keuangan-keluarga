@@ -192,7 +192,7 @@ class AccountArchiveTest extends TestCase
         $response = $this->patchJson("/api/v1/households/{$household->id}/accounts/{$account->id}/archive");
         $response->assertStatus(200);
         $data = $response->json('account');
-        $expected = ['id', 'name', 'type', 'initial_balance', 'is_active'];
+        $expected = ['id', 'user_id', 'user_name', 'name', 'type', 'initial_balance', 'is_active'];
         $this->assertEquals($expected, array_keys($data));
     }
 }

@@ -19,9 +19,10 @@ export default function Login() {
     try {
       const response = await api.post('/login', { email, password });
       const { token, user } = response.data;
-        login(user, token);
+      await login(user, token);
 
       navigate('/');
+
     } catch (err) {
       if (err.response) {
         if (err.response.status === 422) {

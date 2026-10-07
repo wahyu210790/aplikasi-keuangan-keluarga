@@ -51,11 +51,25 @@ export const AuthProvider = ({ children }) => {
     fetchUser();
   }, []);
 
-  const login = (user, token) => {
+  const login = async (userData, token) => {
     localStorage.setItem('auth_token', token);
-    localStorage.setItem('auth_user', JSON.stringify(user));
-    setUser(user);
+    localStorage.setItem('auth_user', JSON.stringify(userData));
+    setUser(userData);
+    try {
+      const response = await api.get('/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.user) {
+        setUser(response.data.user);
+      }
+      if (response.data.households) {
+        setHouseholds(response.data.households);
+      }
+    } catch (err) {
+      // Keep initial user if /me request fails
+    }
   };
+
 
   const logout = async () => {
     const token = localStorage.getItem('auth_token');

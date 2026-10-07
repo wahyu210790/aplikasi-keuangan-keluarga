@@ -16,6 +16,7 @@ class Account extends Model
      */
     protected $fillable = [
         'household_id',
+        'user_id',
         'name',
         'type',
         'initial_balance',
@@ -29,6 +30,7 @@ class Account extends Model
      */
     protected $casts = [
         'household_id' => 'integer',
+        'user_id' => 'integer',
         'initial_balance' => 'decimal:2',
         'is_active' => 'boolean',
     ];
@@ -40,6 +42,15 @@ class Account extends Model
     {
         return $this->belongsTo(Household::class);
     }
+
+    /**
+     * Get the user member who owns the account.
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
 
     /**
      * Calculate derived current balance from transactions.
