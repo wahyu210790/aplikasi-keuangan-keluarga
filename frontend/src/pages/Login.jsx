@@ -21,7 +21,11 @@ export default function Login() {
       const { token, user } = response.data;
       await login(user, token);
 
-      navigate('/');
+      if (user?.global_role === 'super_admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
 
     } catch (err) {
       if (err.response) {

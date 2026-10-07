@@ -75,24 +75,25 @@ export default function AppLayout() {
     }
   };
 
-  const navLinks = [
-    { path: '/', label: 'Dashboard' },
-    { path: '/accounts', label: 'Akun' },
-    { path: '/transactions', label: 'Transaksi' },
-    { path: '/recurring-transactions', label: 'Rutin' },
-    { path: '/budgets', label: 'Anggaran' },
-    { path: '/savings', label: 'Tabungan' },
-    { path: '/reports', label: 'Laporan' },
-    { path: '/subscription', label: 'Langganan' },
-    { path: '/currencies', label: 'Kurs' },
-    { path: '/activity-logs', label: 'Audit Log' },
-    { path: '/household/members', label: 'Anggota' },
-    { path: '/profile', label: 'Profil' },
-  ];
-
-  if (user?.global_role === 'super_admin') {
-    navLinks.push({ path: '/admin', label: 'Super Admin' });
-  }
+  const navLinks = user?.global_role === 'super_admin'
+    ? [
+        { path: '/admin', label: 'Super Admin Panel' },
+        { path: '/profile', label: 'Profil' },
+      ]
+    : [
+        { path: '/', label: 'Dashboard' },
+        { path: '/accounts', label: 'Akun' },
+        { path: '/transactions', label: 'Transaksi' },
+        { path: '/recurring-transactions', label: 'Rutin' },
+        { path: '/budgets', label: 'Anggaran' },
+        { path: '/savings', label: 'Tabungan' },
+        { path: '/reports', label: 'Laporan' },
+        { path: '/subscription', label: 'Langganan' },
+        { path: '/currencies', label: 'Kurs' },
+        { path: '/activity-logs', label: 'Audit Log' },
+        { path: '/household/members', label: 'Anggota' },
+        { path: '/profile', label: 'Profil' },
+      ];
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">

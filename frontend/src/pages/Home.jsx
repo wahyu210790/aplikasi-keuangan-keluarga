@@ -1,12 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useHousehold } from '../context/HouseholdContext';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import Card from '../components/Card';
 import Alert from '../components/Alert';
 
 export default function Home() {
+  const { user } = useAuth();
   const { activeHouseholdId, activeHousehold, loading: contextLoading } = useHousehold();
+
+  if (user?.global_role === 'super_admin') {
+    return <Navigate to="/admin" replace />;
+  }
 
   const [summary, setSummary] = useState(null);
   const [budgets, setBudgets] = useState([]);
