@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->foreignId('household_id')->constrained('households')->onDelete('cascade');
-            $table->enum('role', ['household_owner', 'household_member']);
+            $table->string('role')->default('adult_member');
             $table->timestamps();
 
             $table->unique(['household_id', 'user_id']);

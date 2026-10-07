@@ -4,26 +4,22 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Household;
 use App\Models\Transaction;
+use App\Models\Account;
+use App\Models\ActivityLog;
+use App\Services\HouseholdPermissionService;
+use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
-use App\Models\Account;
-use App\Models\ActivityLog;
-use App\Http\Controllers\Controller;
 
 class TransactionController extends Controller
 {
     /**
      * Display a listing of the transactions for the given household.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \App\Models\Household  $household  (route model binding)
-     * @return \Illuminate\Http\JsonResponse
      */
     public function index(Request $request, Household $household): JsonResponse
     {
-        // Middleware ensures the authenticated user is a member of the household.
         $query = Transaction::where('household_id', $household->id);
 
         if ($request->filled('type') && in_array($request->input('type'), ['income', 'expense', 'transfer'])) {
@@ -45,15 +41,14 @@ class TransactionController extends Controller
 
         return response()->json(['transactions' => $transactions]);
     }
+
     /**
      * Store a new transaction for the given household.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \App\Models\Household  $household
-     * @return \Illuminate\Http\JsonResponse
      */
     public function store(Request $request, Household $household): JsonResponse
     {
+        $user = $request->user();
+
         $validator = Validator::make($request->all(), [
             'type' => ['required', Rule::in(['income', 'expense', 'transfer'])],
             'amount' => ['required', 'numeric', 'gt:0'],
@@ -63,7 +58,7 @@ class TransactionController extends Controller
             'to_account_id' => ['nullable', 'integer'],
         ]);
 
-        $validator->after(function ($validator) use ($request, $household) {
+        $validator->after(function ($validator) use ($request, $household, $user) {
             $type = $request->input('type');
             $accountId = $request->input('account_id');
             $toAccountId = $request->input('to_account_id');
@@ -72,8 +67,9 @@ class TransactionController extends Controller
                 ->where('id', $accountId)
                 ->where('is_active', true)
                 ->first();
-            if (! $account) {
-                $validator->errors()->add('account_id', 'The selected account is invalid.');
+
+            if (! $account || ! HouseholdPermissionService::canAccessAccount($user, $household, $account)) {
+                $validator->errors()->add('account_id', 'The selected account is invalid or inaccessible.');
                 return;
             }
 
@@ -89,8 +85,9 @@ class TransactionController extends Controller
                     ->where('id', $toAccountId)
                     ->where('is_active', true)
                     ->first();
-                if (! $toAccount) {
-                    $validator->errors()->add('to_account_id', 'The selected to_account_id is invalid.');
+
+                if (! $toAccount || ! HouseholdPermissionService::canAccessAccount($user, $household, $toAccount)) {
+                    $validator->errors()->add('to_account_id', 'The selected to_account_id is invalid or inaccessible.');
                 }
             } else {
                 if (! is_null($toAccountId)) {
@@ -117,7 +114,7 @@ class TransactionController extends Controller
         ]);
 
         ActivityLog::create([
-            'user_id' => $request->user()->id,
+            'user_id' => $user->id,
             'household_id' => $household->id,
             'action' => 'transaction_created',
             'entity_type' => 'transaction',
@@ -138,10 +135,6 @@ class TransactionController extends Controller
 
     /**
      * Display the specified transaction for the given household.
-     *
-     * @param  \App\Models\Household  $household
-     * @param  \App\Models\Transaction  $transaction
-     * @return \Illuminate\Http\JsonResponse
      */
     public function show(Household $household, Transaction $transaction): JsonResponse
     {
@@ -163,22 +156,15 @@ class TransactionController extends Controller
     }
 
     /**
-    * Update an existing transaction for the given household.
-    *
-    * @param  \Illuminate\Http\Request  $request
-    * @param  \App\Models\Household  $household
-    * @param  \App\Models\Transaction $transactionModel
-    * @return \Illuminate\Http\JsonResponse
-    */
+     * Update an existing transaction for the given household.
+     */
     public function update(Request $request, Household $household, Transaction $transaction): JsonResponse
     {
-        // Debug IDs
-        logger()->debug('Ownership check IDs', ['transaction_household_id' => $transaction->household_id, 'household_id' => $household->id]);
         if ((int) $transaction->household_id !== (int) $household->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        // Determine which fields are being updated
+        $user = $request->user();
         $updatable = ['type', 'amount', 'description', 'transaction_date', 'account_id', 'to_account_id'];
         $provided = array_intersect($updatable, array_keys($request->all()));
         if (empty($provided)) {
@@ -187,7 +173,6 @@ class TransactionController extends Controller
             ], 422);
         }
 
-        // Validation rules (only for provided fields)
         $rules = [
             'type' => ['sometimes', Rule::in(['income', 'expense', 'transfer'])],
             'amount' => ['sometimes', 'numeric', 'gt:0'],
@@ -198,9 +183,7 @@ class TransactionController extends Controller
         ];
         $validator = Validator::make($request->only($updatable), $rules);
 
-        // After‑validation checks using merged data (existing + new)
-        $validator->after(function ($validator) use ($request, $household, $transaction) {
-            // Merge existing transaction data with incoming data
+        $validator->after(function ($validator) use ($request, $household, $transaction, $user) {
             $data = $transaction->only(['type', 'account_id', 'to_account_id']);
             foreach ($request->only(['type', 'account_id', 'to_account_id']) as $key => $value) {
                 if (!is_null($value)) {
@@ -211,13 +194,13 @@ class TransactionController extends Controller
             $accountId = $data['account_id'];
             $toAccountId = $data['to_account_id'] ?? null;
 
-            // Validate source account belongs to household and is active
             $account = Account::where('household_id', $household->id)
                 ->where('id', $accountId)
                 ->where('is_active', true)
                 ->first();
-            if (! $account) {
-                $validator->errors()->add('account_id', 'The selected account is invalid.');
+
+            if (! $account || ! HouseholdPermissionService::canAccessAccount($user, $household, $account)) {
+                $validator->errors()->add('account_id', 'The selected account is invalid or inaccessible.');
                 return;
             }
 
@@ -233,11 +216,11 @@ class TransactionController extends Controller
                     ->where('id', $toAccountId)
                     ->where('is_active', true)
                     ->first();
-                if (! $toAccount) {
-                    $validator->errors()->add('to_account_id', 'The selected to_account_id is invalid.');
+
+                if (! $toAccount || ! HouseholdPermissionService::canAccessAccount($user, $household, $toAccount)) {
+                    $validator->errors()->add('to_account_id', 'The selected to_account_id is invalid or inaccessible.');
                 }
             } else {
-                // Only enforce null when the request explicitly provides a non‑null value
                 if ($request->has('to_account_id') && ! is_null($toAccountId)) {
                     $validator->errors()->add('to_account_id', 'The to_account_id must be null for income and expense transactions.');
                 }
@@ -251,7 +234,6 @@ class TransactionController extends Controller
             ], 422);
         }
 
-        // Prepare data for update
         $updateData = [];
         if ($request->filled('type')) {
             $updateData['type'] = $request->input('type');
@@ -274,9 +256,8 @@ class TransactionController extends Controller
 
         $transaction->update($updateData);
 
-        // Activity log
         ActivityLog::create([
-            'user_id' => $request->user()->id,
+            'user_id' => $user->id,
             'household_id' => $household->id,
             'action' => 'transaction_updated',
             'entity_type' => 'transaction',
@@ -294,28 +275,19 @@ class TransactionController extends Controller
             ]),
         ], 200);
     }
+
     /**
      * Delete a transaction for the given household.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \App\Models\Household  $household
-     * @param  \App\Models\Transaction $transactionModel
-     * @return \Illuminate\Http\JsonResponse
      */
     public function destroy(Request $request, Household $household, Transaction $transaction): JsonResponse
     {
-        // Ensure the transaction belongs to the household
         if ((int) $transaction->household_id !== (int) $household->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        // Preserve ID for activity log before deletion
         $transactionId = $transaction->id;
-
-        // Perform hard delete
         $transaction->delete();
 
-        // Log activity
         ActivityLog::create([
             'user_id' => $request->user()->id,
             'household_id' => $household->id,
@@ -333,8 +305,3 @@ class TransactionController extends Controller
         ], 200);
     }
 }
-
-
-
-
-?>

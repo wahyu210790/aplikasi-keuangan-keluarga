@@ -36,7 +36,7 @@ class HouseholdMemberController extends Controller
                 'user_id' => $m->user_id,
                 'name' => $m->user->name,
                 'email' => $m->user->email,
-                'role' => $m->role,
+                'role' => $m->role === HouseholdMember::ROLE_MEMBER_LEGACY ? HouseholdMember::ROLE_ADULT : $m->role,
             ];
         });
 
@@ -66,12 +66,14 @@ class HouseholdMemberController extends Controller
 
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'email', 'exists:users,email'],
-            'role' => ['required', 'in:household_member'],
+            'role' => ['sometimes', 'in:household_member,adult_member,child_member'],
         ]);
         if ($validator->fails()) {
             return response()->json(['message' => 'Validation errors', 'errors' => $validator->errors()], 422);
         }
         $validated = $validator->validated();
+
+        $role = $validated['role'] ?? 'adult_member';
 
         // Find target user
         $targetUser = User::where('email', $validated['email'])->first();
@@ -89,11 +91,11 @@ class HouseholdMemberController extends Controller
             return response()->json(['message' => 'User already a member'], 422);
         }
 
-        return DB::transaction(function () use ($household, $targetUser, $user) {
+        return DB::transaction(function () use ($household, $targetUser, $user, $role) {
             $member = HouseholdMember::create([
                 'user_id' => $targetUser->id,
                 'household_id' => $household->id,
-                'role' => 'household_member',
+                'role' => $role,
             ]);
 
             ActivityLog::create([
@@ -143,16 +145,16 @@ class HouseholdMemberController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'role' => ['required', 'in:household_member'], // only member role allowed
+            'role' => ['required', 'in:household_member,adult_member,child_member'],
         ]);
         if ($validator->fails()) {
             return response()->json(['message' => 'Validation errors', 'errors' => $validator->errors()], 422);
         }
 
-        $validated = $validator->validated();
+        $newRole = $request->input('role');
 
-        return DB::transaction(function () use ($member, $validated, $user, $household) {
-            $member->role = $validated['role'];
+        return DB::transaction(function () use ($member, $newRole, $user, $household) {
+            $member->role = $newRole;
             $member->save();
 
             ActivityLog::create([
@@ -190,14 +192,12 @@ class HouseholdMemberController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        // Ensure member belongs to household
         if ($member->household_id !== $household->id) {
             return response()->json(['message' => 'Member not in household'], 404);
         }
 
-        // Prevent owner self-deletion
         if ($member->role === 'household_owner') {
-            return response()->json(['message' => 'Cannot delete owner'], 422);
+            return response()->json(['message' => 'Cannot remove owner'], 422);
         }
 
         return DB::transaction(function () use ($member, $user, $household) {

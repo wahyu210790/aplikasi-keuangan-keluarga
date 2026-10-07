@@ -10,6 +10,11 @@ class HouseholdMember extends Model
 {
     use HasFactory;
 
+    public const ROLE_OWNER = 'household_owner';
+    public const ROLE_ADULT = 'adult_member';
+    public const ROLE_CHILD = 'child_member';
+    public const ROLE_MEMBER_LEGACY = 'household_member';
+
     /**
      * The attributes that are mass assignable.
      */
@@ -18,6 +23,30 @@ class HouseholdMember extends Model
         'household_id',
         'role',
     ];
+
+    /**
+     * Check if member is household owner.
+     */
+    public function isOwner(): bool
+    {
+        return $this->role === self::ROLE_OWNER;
+    }
+
+    /**
+     * Check if member is adult member (or legacy household_member).
+     */
+    public function isAdult(): bool
+    {
+        return $this->role === self::ROLE_ADULT || $this->role === self::ROLE_MEMBER_LEGACY;
+    }
+
+    /**
+     * Check if member is child member.
+     */
+    public function isChild(): bool
+    {
+        return $this->role === self::ROLE_CHILD;
+    }
 
     /**
      * The user that belongs to the household member.

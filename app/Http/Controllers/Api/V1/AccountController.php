@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Account;
 use App\Models\Household;
+use App\Models\HouseholdMember;
+use App\Services\HouseholdPermissionService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
@@ -19,20 +21,22 @@ class AccountController extends Controller
      */
     private function isHouseholdOwner(Household $household, int $userId): bool
     {
-        $member = \App\Models\HouseholdMember::where('household_id', $household->id)
+        $member = HouseholdMember::where('household_id', $household->id)
             ->where('user_id', $userId)
             ->first();
 
-        return $member && $member->role === 'household_owner';
+        return $member && $member->isOwner();
     }
 
     /**
-     * List accounts belonging to a household.
+     * List accounts belonging to a household that are accessible to the current user.
      */
-    public function index(Household $household): JsonResponse
+    public function index(Household $household, Request $request): JsonResponse
     {
-        $accounts = Account::with('user:id,name')
-            ->where('household_id', $household->id)
+        $user = $request->user();
+
+        $accounts = HouseholdPermissionService::accessibleAccountsQuery($user, $household)
+            ->with('user:id,name')
             ->orderBy('id', 'asc')
             ->get([
                 'id',
@@ -93,7 +97,7 @@ class AccountController extends Controller
         $targetUserId = $request->input('user_id');
         if ($targetUserId) {
             // Check if target user belongs to the household
-            $isMember = \App\Models\HouseholdMember::where('household_id', $household->id)
+            $isMember = HouseholdMember::where('household_id', $household->id)
                 ->where('user_id', $targetUserId)
                 ->exists();
 
@@ -179,14 +183,9 @@ class AccountController extends Controller
     public function update(Household $household, Account $account, Request $request): JsonResponse
     {
         $user = $request->user();
-        // Ensure the account belongs to the household (tenant isolation)
-        if ($account->household_id !== $household->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
 
-        $isOwner = $this->isHouseholdOwner($household, $user->id);
-        // Regular members can only update their own account
-        if (!$isOwner && $account->user_id !== null && (int) $account->user_id !== (int) $user->id) {
+        // Check backend permission
+        if (! HouseholdPermissionService::canManageAccount($user, $household, $account)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -271,14 +270,9 @@ class AccountController extends Controller
     public function archive(Household $household, Account $account, Request $request): JsonResponse
     {
         $user = $request->user();
-        // Tenant isolation: ensure the account belongs to the household
-        if ($account->household_id !== $household->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
 
-        $isOwner = $this->isHouseholdOwner($household, $user->id);
-        // Regular members can only archive their own account
-        if (!$isOwner && $account->user_id !== null && (int) $account->user_id !== (int) $user->id) {
+        // Check backend permission
+        if (! HouseholdPermissionService::canManageAccount($user, $household, $account)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -334,6 +328,3 @@ class AccountController extends Controller
         ], 200);
     }
 }
-
-
-
