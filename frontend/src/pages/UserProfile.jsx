@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import Card from '../components/Card';
 import Alert from '../components/Alert';
@@ -6,6 +7,7 @@ import Button from '../components/Button';
 import Input from '../components/Input';
 
 export default function UserProfile() {
+  const { logout } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -112,9 +114,20 @@ export default function UserProfile() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Profil & Keamanan Akun</h1>
-        <p className="text-gray-600 text-sm">Kelola informasi diri, kata sandi, dan keamanan sesi perangkat</p>
+      <div className="flex justify-between items-center flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Profil &amp; Keamanan Akun</h1>
+          <p className="text-gray-600 text-sm">Kelola informasi diri, kata sandi, dan keamanan sesi perangkat</p>
+        </div>
+        <Button
+          onClick={logout}
+          className="bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center space-x-2 text-sm px-4 py-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          <span>Keluar dari Akun</span>
+        </Button>
       </div>
 
       {successMessage && (
@@ -193,15 +206,21 @@ export default function UserProfile() {
         </form>
       </Card>
 
-      {/* Security Sessions */}
+      {/* Security Sessions & Logout */}
       <Card className="p-6 bg-white space-y-4">
-        <h2 className="text-lg font-bold text-red-600 border-b pb-2">Sesi & Keamanan Perangkat</h2>
+        <h2 className="text-lg font-bold text-red-600 border-b pb-2">Sesi &amp; Keamanan Perangkat</h2>
         <p className="text-sm text-gray-600">
           Jika Anda merasa akun Anda digunakan di perangkat tidak dikenal, Anda dapat mencabut seluruh sesi login Sanctum aktif di perangkat lain.
         </p>
-        <div>
-          <Button onClick={handleRevokeTokens} className="bg-red-600 hover:bg-red-700 text-white">
-            Keluar dari Semua Sesi Perangkat
+        <div className="flex flex-wrap gap-3 pt-2">
+          <Button onClick={logout} className="bg-red-600 hover:bg-red-700 text-white font-bold flex items-center space-x-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span>Keluar dari Akun Sekarang</span>
+          </Button>
+          <Button onClick={handleRevokeTokens} className="bg-gray-700 hover:bg-gray-800 text-white">
+            Keluar dari Semua Perangkat Lain
           </Button>
         </div>
       </Card>

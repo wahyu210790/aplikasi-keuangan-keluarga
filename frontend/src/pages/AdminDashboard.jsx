@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -223,12 +223,24 @@ export default function AdminDashboard() {
             <h1 className="text-2xl font-bold text-gray-900">Super Admin Panel</h1>
             <p className="text-sm text-gray-500">Pusat kontrol operasional SaaS, manajemen user, paket, & audit log</p>
           </div>
-          <button
-            onClick={fetchData}
-            className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700 transition"
-          >
-            Refresh Data
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={fetchData}
+              className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700 transition"
+            >
+              Refresh Data
+            </button>
+            <button
+              onClick={logout}
+              className="px-3 py-1.5 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700 transition flex items-center space-x-1"
+              title="Keluar / Logout"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span>Keluar</span>
+            </button>
+          </div>
         </div>
 
         {/* Navigation Tabs */}

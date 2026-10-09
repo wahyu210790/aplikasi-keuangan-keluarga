@@ -84,7 +84,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('auth_user');
     setUser(null);
     setHouseholds([]);
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   return (
