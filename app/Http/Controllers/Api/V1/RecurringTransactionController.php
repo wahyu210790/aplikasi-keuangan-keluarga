@@ -10,11 +10,42 @@ use App\Models\RecurringTransaction;
 use App\Models\Transaction;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 class RecurringTransactionController extends Controller
 {
+    /**
+     * Check if a recurring item has already been generated/paid for the target period.
+     */
+    protected function isSamePeriod(string $frequency, ?string $lastGeneratedAt, string $targetDate): bool
+    {
+        if (! $lastGeneratedAt) {
+            return false;
+        }
+
+        $lastTs = strtotime($lastGeneratedAt);
+        $targetTs = strtotime($targetDate);
+
+        if (! $lastTs || ! $targetTs) {
+            return false;
+        }
+
+        switch ($frequency) {
+            case 'daily':
+                return date('Y-m-d', $lastTs) === date('Y-m-d', $targetTs);
+            case 'weekly':
+                return date('o-W', $lastTs) === date('o-W', $targetTs);
+            case 'monthly':
+                return date('Y-m', $lastTs) === date('Y-m', $targetTs);
+            case 'yearly':
+                return date('Y', $lastTs) === date('Y', $targetTs);
+            default:
+                return date('Y-m-d', $lastTs) === date('Y-m-d', $targetTs);
+        }
+    }
+
     /**
      * Display a listing of recurring transactions for the given household.
      */
@@ -28,6 +59,15 @@ class RecurringTransactionController extends Controller
         }
 
         $items = $query->orderBy('id', 'desc')->get();
+        $today = date('Y-m-d');
+
+        $items->transform(function ($item) use ($today) {
+            $lastGen = $item->last_generated_at ? (is_string($item->last_generated_at) ? $item->last_generated_at : $item->last_generated_at->format('Y-m-d')) : null;
+            $isPaid = $this->isSamePeriod($item->frequency, $lastGen, $today);
+            $item->is_paid_current_period = $isPaid;
+            $item->payment_status = $isPaid ? 'paid' : 'unpaid';
+            return $item;
+        });
 
         return response()->json(['recurring_transactions' => $items], 200);
     }
@@ -283,34 +323,84 @@ class RecurringTransactionController extends Controller
 
         $transactionDate = $request->input('transaction_date', date('Y-m-d'));
 
-        $transaction = Transaction::create([
-            'household_id' => $household->id,
-            'type' => $recurring->type,
-            'amount' => $recurring->amount,
-            'description' => $recurring->description ? "[Rutin] {$recurring->description}" : '[Rutin]',
-            'transaction_date' => $transactionDate,
-            'account_id' => $recurring->account_id,
-            'to_account_id' => $recurring->to_account_id,
-        ]);
+        try {
+            return DB::transaction(function () use ($request, $household, $recurring, $transactionDate) {
+                // Lock the record for update to prevent concurrent processing
+                $lockedItem = RecurringTransaction::where('id', $recurring->id)
+                    ->where('household_id', $household->id)
+                    ->lockForUpdate()
+                    ->first();
 
-        $recurring->update(['last_generated_at' => $transactionDate]);
+                if (! $lockedItem) {
+                    return response()->json(['message' => 'Recurring transaction not found.'], 404);
+                }
 
-        ActivityLog::create([
-            'user_id' => $request->user()->id,
-            'household_id' => $household->id,
-            'action' => 'recurring_transaction_processed',
-            'entity_type' => 'transaction',
-            'entity_id' => $transaction->id,
-            'description' => null,
-            'metadata' => ['recurring_transaction_id' => $recurring->id],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->header('User-Agent'),
-        ]);
+                $lastGen = $lockedItem->last_generated_at ? (is_string($lockedItem->last_generated_at) ? $lockedItem->last_generated_at : $lockedItem->last_generated_at->format('Y-m-d')) : null;
 
-        return response()->json([
-            'message' => 'Transaction generated successfully from recurring template.',
-            'transaction' => $transaction,
-        ], 201);
+                if ($this->isSamePeriod($lockedItem->frequency, $lastGen, $transactionDate)) {
+                    return response()->json([
+                        'message' => 'Jadwal rutin ini sudah diproses/dibayar untuk periode ini.',
+                        'is_paid' => true,
+                    ], 422);
+                }
+
+                // Validate account
+                $account = Account::where('household_id', $household->id)
+                    ->where('id', $lockedItem->account_id)
+                    ->where('is_active', true)
+                    ->first();
+
+                if (! $account) {
+                    return response()->json(['message' => 'Rekening sumber tidak valid atau tidak aktif.'], 422);
+                }
+
+                if ($lockedItem->type === 'transfer') {
+                    if (! $lockedItem->to_account_id) {
+                        return response()->json(['message' => 'Rekening tujuan wajib diisi untuk transfer.'], 422);
+                    }
+                    $toAccount = Account::where('household_id', $household->id)
+                        ->where('id', $lockedItem->to_account_id)
+                        ->where('is_active', true)
+                        ->first();
+                    if (! $toAccount) {
+                        return response()->json(['message' => 'Rekening tujuan tidak valid atau tidak aktif.'], 422);
+                    }
+                }
+
+                $transaction = Transaction::create([
+                    'household_id' => $household->id,
+                    'type' => $lockedItem->type,
+                    'amount' => $lockedItem->amount,
+                    'description' => $lockedItem->description ? "[Rutin] {$lockedItem->description}" : '[Rutin]',
+                    'transaction_date' => $transactionDate,
+                    'account_id' => $lockedItem->account_id,
+                    'to_account_id' => $lockedItem->to_account_id,
+                ]);
+
+                $lockedItem->update(['last_generated_at' => $transactionDate]);
+
+                ActivityLog::create([
+                    'user_id' => $request->user()->id,
+                    'household_id' => $household->id,
+                    'action' => 'recurring_transaction_processed',
+                    'entity_type' => 'transaction',
+                    'entity_id' => $transaction->id,
+                    'description' => null,
+                    'metadata' => ['recurring_transaction_id' => $lockedItem->id],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->header('User-Agent'),
+                ]);
+
+                return response()->json([
+                    'message' => 'Transaksi berhasil dicatat.',
+                    'transaction' => $transaction,
+                ], 201);
+            });
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal memproses transaksi rutin: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

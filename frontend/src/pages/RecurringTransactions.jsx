@@ -59,6 +59,9 @@ export default function RecurringTransactions() {
   const [deleteItem, setDeleteItem] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
+  // Confirm Payment Modal
+  const [confirmItem, setConfirmItem] = useState(null);
+
   const requestIdRef = useRef(0);
 
   const formatRupiah = (val) => {
@@ -156,15 +159,21 @@ export default function RecurringTransactions() {
     setCreateErrors({});
   };
 
-  const handleProcess = async (id) => {
+  const handleConfirmProcess = async () => {
+    if (!confirmItem || processingId) return;
+    const id = confirmItem.id;
     setProcessingId(id);
     setError(null);
     try {
-      await api.post(`/households/${activeHouseholdId}/recurring-transactions/${id}/process`);
-      setSuccessMessage('Transaksi berhasil diproses & dicatat!');
+      await api.post(`/households/${activeHouseholdId}/recurring-transactions/${id}/process`, {
+        transaction_date: new Date().toISOString().slice(0, 10)
+      });
+      setSuccessMessage('Transaksi berhasil dicatat & ditandai sudah dibayar!');
+      setConfirmItem(null);
       fetchRecurring();
     } catch (err) {
       setError(err.response?.data?.message || 'Gagal memproses transaksi rutin');
+      setConfirmItem(null);
     } finally {
       setProcessingId(null);
     }
@@ -238,53 +247,112 @@ export default function RecurringTransactions() {
                   <th className="py-3 px-4">Jumlah</th>
                   <th className="py-3 px-4">Akun</th>
                   <th className="py-3 px-4">Terakhir Diproses</th>
-                  <th className="py-3 px-4 text-center">Status</th>
+                  <th className="py-3 px-4 text-center">Status Periode</th>
                   <th className="py-3 px-4 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y text-sm">
-                {recurringList.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium text-gray-900">{item.description || '-'}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
-                        item.type === 'income' ? 'bg-green-100 text-green-800' :
-                        item.type === 'expense' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {item.type}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 capitalize text-gray-700">{item.frequency}</td>
-                    <td className="py-3 px-4 font-semibold text-gray-900">{formatRupiah(item.amount)}</td>
-                    <td className="py-3 px-4 text-gray-600">{item.account?.name || '-'}</td>
-                    <td className="py-3 px-4 text-gray-500 text-xs">{item.last_generated_at ? new Date(item.last_generated_at).toLocaleDateString('id-ID') : 'Belum pernah'}</td>
-                    <td className="py-3 px-4 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${item.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
-                        {item.is_active ? 'Aktif' : 'Non-Aktif'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right space-x-2">
-                      <button
-                        onClick={() => handleProcess(item.id)}
-                        disabled={processingId === item.id}
-                        className="px-3 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-xs font-semibold disabled:opacity-50"
-                      >
-                        {processingId === item.id ? 'Memproses...' : 'Proses Sekarang'}
-                      </button>
-                      <button
-                        onClick={() => setDeleteItem(item)}
-                        className="px-2 py-1 text-red-600 hover:text-red-800 text-xs font-semibold"
-                      >
-                        Hapus
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {recurringList.map((item) => {
+                  const isPaid = item.is_paid_current_period || item.payment_status === 'paid';
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50">
+                      <td className="py-3 px-4 font-medium text-gray-900">{item.description || '-'}</td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
+                          item.type === 'income' ? 'bg-green-100 text-green-800' :
+                          item.type === 'expense' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {item.type}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 capitalize text-gray-700">{item.frequency}</td>
+                      <td className="py-3 px-4 font-semibold text-gray-900">{formatRupiah(item.amount)}</td>
+                      <td className="py-3 px-4 text-gray-600">{item.account?.name || '-'}</td>
+                      <td className="py-3 px-4 text-gray-500 text-xs">{item.last_generated_at ? new Date(item.last_generated_at).toLocaleDateString('id-ID') : 'Belum pernah'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {isPaid ? 'Sudah Dibayar' : 'Belum Dibayar'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right space-x-2">
+                        {isPaid ? (
+                          <span className="px-3 py-1 bg-gray-100 text-gray-500 rounded text-xs font-semibold cursor-not-allowed inline-block">
+                            Sudah Dibayar
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmItem(item)}
+                            disabled={processingId === item.id}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold disabled:opacity-50 transition-colors"
+                          >
+                            {processingId === item.id ? 'Memproses...' : 'Tandai Sudah Dibayar'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setDeleteItem(item)}
+                          className="px-2 py-1 text-red-600 hover:text-red-800 text-xs font-semibold"
+                        >
+                          Hapus
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
+
+      {/* Confirmation Payment Modal */}
+      <Modal isOpen={!!confirmItem} title="Konfirmasi Pembayaran Tagihan" onClose={() => !processingId && setConfirmItem(null)}>
+        {confirmItem && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 text-sm">
+              Apakah Anda yakin ingin mencatat transaksi pembayaran berikut? Transaksi ini akan langsung memotong/menambah saldo rekening.
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg space-y-2 border text-sm">
+              <div className="flex justify-between py-1 border-b">
+                <span className="text-gray-600">Nama Tagihan / Rutin:</span>
+                <span className="font-semibold text-gray-900">{confirmItem.description || confirmItem.type}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b">
+                <span className="text-gray-600">Jumlah:</span>
+                <span className="font-bold text-emerald-600 text-base">{formatRupiah(confirmItem.amount)}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b">
+                <span className="text-gray-600">Tanggal Transaksi:</span>
+                <span className="font-medium text-gray-800">{new Date().toLocaleDateString('id-ID')}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-gray-600">Rekening Sumber:</span>
+                <span className="font-medium text-gray-800">{confirmItem.account?.name || '-'}</span>
+              </div>
+              {confirmItem.type === 'transfer' && (
+                <div className="flex justify-between py-1 border-t">
+                  <span className="text-gray-600">Rekening Tujuan:</span>
+                  <span className="font-medium text-gray-800">{confirmItem.to_account?.name || '-'}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setConfirmItem(null)} disabled={!!processingId}>
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmProcess}
+                disabled={!!processingId}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {processingId === confirmItem.id ? 'Memproses...' : 'Tandai Sudah Dibayar'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Create Modal */}
       <Modal isOpen={isCreateOpen} title="Tambah Transaksi Rutin" onClose={() => setIsCreateOpen(false)}>

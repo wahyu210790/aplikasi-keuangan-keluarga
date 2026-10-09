@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Household;
 use App\Models\HouseholdMember;
 use App\Models\RecurringTransaction;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -68,7 +69,9 @@ class RecurringTransactionFeatureTest extends TestCase
         $response = $this->getJson("/api/v1/households/{$this->household->id}/recurring-transactions");
 
         $response->assertStatus(200)
-            ->assertJsonPath('recurring_transactions.0.description', 'Tagihan Listrik');
+            ->assertJsonPath('recurring_transactions.0.description', 'Tagihan Listrik')
+            ->assertJsonPath('recurring_transactions.0.is_paid_current_period', false)
+            ->assertJsonPath('recurring_transactions.0.payment_status', 'unpaid');
     }
 
     public function test_user_can_create_recurring_transaction(): void
@@ -98,7 +101,7 @@ class RecurringTransactionFeatureTest extends TestCase
         ]);
     }
 
-    public function test_user_can_process_recurring_transaction(): void
+    public function test_payment_creates_exactly_one_transaction(): void
     {
         Sanctum::actingAs($this->user);
 
@@ -117,17 +120,102 @@ class RecurringTransactionFeatureTest extends TestCase
         $response = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process");
 
         $response->assertStatus(201)
-            ->assertJsonPath('message', 'Transaction generated successfully from recurring template.');
+            ->assertJsonPath('message', 'Transaksi berhasil dicatat.');
 
-        $this->assertDatabaseHas('transactions', [
-            'household_id' => $this->household->id,
-            'account_id' => $this->account->id,
-            'amount' => 200000,
-            'type' => 'expense',
-        ]);
+        $this->assertEquals(1, Transaction::where('household_id', $this->household->id)->count());
 
         $recurring->refresh();
         $this->assertNotNull($recurring->last_generated_at);
+    }
+
+    public function test_duplicate_api_request_for_same_period_prevented(): void
+    {
+        Sanctum::actingAs($this->user);
+
+        $recurring = RecurringTransaction::create([
+            'household_id' => $this->household->id,
+            'account_id' => $this->account->id,
+            'category_id' => $this->category->id,
+            'type' => 'expense',
+            'amount' => 200000,
+            'frequency' => 'monthly',
+            'start_date' => now()->toDateString(),
+            'description' => 'Tagihan Internet',
+            'is_active' => true,
+        ]);
+
+        // First request - Success
+        $res1 = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process", [
+            'transaction_date' => '2026-10-05',
+        ]);
+        $res1->assertStatus(201);
+
+        // Second request for same month (period duplicate) - Error 422
+        $res2 = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process", [
+            'transaction_date' => '2026-10-10',
+        ]);
+        $res2->assertStatus(422)
+            ->assertJsonPath('message', 'Jadwal rutin ini sudah diproses/dibayar untuk periode ini.');
+
+        $this->assertEquals(1, Transaction::where('household_id', $this->household->id)->count());
+    }
+
+    public function test_next_period_can_be_paid_again(): void
+    {
+        Sanctum::actingAs($this->user);
+
+        $recurring = RecurringTransaction::create([
+            'household_id' => $this->household->id,
+            'account_id' => $this->account->id,
+            'category_id' => $this->category->id,
+            'type' => 'expense',
+            'amount' => 300000,
+            'frequency' => 'monthly',
+            'start_date' => '2026-09-01',
+            'last_generated_at' => '2026-09-05', // Paid in September
+            'description' => 'SPP Sekolah',
+            'is_active' => true,
+        ]);
+
+        // October payment (next period)
+        $response = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process", [
+            'transaction_date' => '2026-10-05',
+        ]);
+
+        $response->assertStatus(201);
+
+        $recurring->refresh();
+        $this->assertEquals('2026-10-05', $recurring->last_generated_at->format('Y-m-d'));
+        $this->assertEquals(1, Transaction::where('household_id', $this->household->id)->count());
+    }
+
+    public function test_failed_transaction_does_not_change_status_to_paid(): void
+    {
+        Sanctum::actingAs($this->user);
+
+        // Deactivate account
+        $this->account->update(['is_active' => false]);
+
+        $recurring = RecurringTransaction::create([
+            'household_id' => $this->household->id,
+            'account_id' => $this->account->id,
+            'category_id' => $this->category->id,
+            'type' => 'expense',
+            'amount' => 200000,
+            'frequency' => 'monthly',
+            'start_date' => now()->toDateString(),
+            'description' => 'Tagihan Asuransi',
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Rekening sumber tidak valid atau tidak aktif.');
+
+        $recurring->refresh();
+        $this->assertNull($recurring->last_generated_at);
+        $this->assertEquals(0, Transaction::where('household_id', $this->household->id)->count());
     }
 
     public function test_cross_household_isolation(): void
@@ -157,7 +245,38 @@ class RecurringTransactionFeatureTest extends TestCase
         $response = $this->getJson("/api/v1/households/{$this->household->id}/recurring-transactions");
         $response->assertStatus(403);
 
-        $response2 = $this->deleteJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}");
+        $response2 = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process");
         $response2->assertStatus(403);
+
+        $response3 = $this->deleteJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}");
+        $response3->assertStatus(403);
+    }
+
+    public function test_income_recurring_transaction_works(): void
+    {
+        Sanctum::actingAs($this->user);
+
+        $recurring = RecurringTransaction::create([
+            'household_id' => $this->household->id,
+            'account_id' => $this->account->id,
+            'category_id' => $this->category->id,
+            'type' => 'income',
+            'amount' => 5000000,
+            'frequency' => 'monthly',
+            'start_date' => now()->toDateString(),
+            'description' => 'Gaji Rutin',
+            'is_active' => true,
+        ]);
+
+        $response = $this->postJson("/api/v1/households/{$this->household->id}/recurring-transactions/{$recurring->id}/process");
+
+        $response->assertStatus(201)
+            ->assertJsonPath('transaction.type', 'income');
+
+        $this->assertDatabaseHas('transactions', [
+            'household_id' => $this->household->id,
+            'type' => 'income',
+            'amount' => 5000000,
+        ]);
     }
 }
